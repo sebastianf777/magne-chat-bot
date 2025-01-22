@@ -1,13 +1,20 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const bodyParser = require('body-parser');
+const OpenAI = require('openai');
+require('dotenv').config();
 
 const app = express();
 const PORT = 3000;
 
+// Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json()); // Built-in JSON parser
+
+// OpenAI Configuration
+const openai = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY // This is also the default, can be omitted if you want to automatically use this environment variable
+  });
 
 // URLs de las APIs
 const urls = [
@@ -29,7 +36,7 @@ async function obtenerArticulos() {
             enlace: articulo.link
         }));
 
-        console.log("Artículos procesados:", articulos); // Log para depuración
+        // console.log("Artículos procesados:", articulos); // Log para depuración
         return articulos;
     } catch (error) {
         console.error("Error al obtener los artículos:", error);
@@ -37,36 +44,62 @@ async function obtenerArticulos() {
     }
 }
 
-app.post('/chat', async (req, res) => {
-    console.log("Cuerpo de la solicitud recibido:", req.body); // Log para inspeccionar el cuerpo de la solicitud
+// //modelos disponibles
+// openai.models.list().then((response) => {
+//     console.log("Modelos disponibles:", response.data);
+// }).catch((error) => {
+//     console.error("Error al listar los modelos:", error.response?.data || error.message);
+// });
 
+
+// Usar OpenAI GPT para responder preguntas
+async function procesarPreguntaConGPT(pregunta, articulos) {
+    try {
+        // Concatenar contenido relevante
+        const contexto = articulos
+            .map((articulo) => `Título: ${articulo.titulo}\nContenido: ${articulo.contenido}\nEnlace: ${articulo.enlace}`)
+            .join("\n\n");
+
+        // Enviar la pregunta y el contexto a OpenAI
+        const prompt = `Usa el siguiente contexto para responder la pregunta de manera clara y concisa.\n\nContexto:\n${contexto}\n\nPregunta: ${pregunta}\n\nRespuesta:`;
+
+        const respuestaGPT = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "Eres un asistente útil y experto en responder preguntas con base en contexto proporcionado. Explicas todo de forma resumida en 3 lineas" },
+                { role: "user", content: prompt }
+            ],
+            max_tokens: 300,
+            temperature: 0.7,
+        });
+
+        return respuestaGPT.choices[0].message.content.trim();
+    } catch (error) {
+        console.error("Error al procesar la pregunta con GPT:", error.response?.data || error.message);
+        return "Hubo un problema al procesar tu pregunta con GPT.";
+    }
+}
+
+// Endpoint para el chatbot
+app.post('/chat', async (req, res) => {
     const { pregunta } = req.body;
 
-    // Validar que la pregunta existe
     if (!pregunta || typeof pregunta !== 'string') {
-        console.log("Pregunta inválida o no definida.");
         return res.status(400).json({ error: "La pregunta es inválida o no está definida." });
     }
 
     // Obtener artículos
     const articulos = await obtenerArticulos();
 
-    // Buscar coincidencias en el contenido de los artículos
-    const articuloRelevante = articulos.find(articulo =>
-        articulo.contenido.toLowerCase().includes(pregunta.toLowerCase())
-    );
-
-    // Responder con el contenido relevante o un mensaje predeterminado
-    if (articuloRelevante) {
-        res.json({
-            respuesta: `Encontré esta información que podría ser útil: ${articuloRelevante.contenido}`,
-            enlace: articuloRelevante.enlace
-        });
-    } else {
-        res.json({ respuesta: "Lo siento, no encontré información relevante." });
+    if (articulos.length === 0) {
+        return res.json({ respuesta: "No se encontraron artículos para buscar." });
     }
-});
 
+    // Usar OpenAI GPT para procesar la pregunta
+    const respuesta = await procesarPreguntaConGPT(pregunta, articulos);
+
+    res.json({ respuesta });
+});
 
 // Iniciar el servidor
 app.listen(PORT, () => {
