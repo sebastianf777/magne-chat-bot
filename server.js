@@ -101,6 +101,9 @@ app.post('/chat', async (req, res) => {
     res.json({ respuesta });
 });
 
+// Export the app for Vercel
+module.exports = app;
+
 // Iniciar el servidor
 app.listen(PORT, () => {
     console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
