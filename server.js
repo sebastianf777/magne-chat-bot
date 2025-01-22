@@ -101,6 +101,10 @@ app.post('/chat', async (req, res) => {
     res.json({ respuesta });
 });
 
+app.use((req, res) => {
+    res.status(404).json({ error: "Ruta no encontrada" });
+});
+
 // Export the app for Vercel
 module.exports = app;
 
